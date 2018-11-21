@@ -22,7 +22,13 @@ func SetApiHeader(headerParams map[string]string, c *Configuration, httpMethod, 
 	//bodyStr = "{\"channelID\":2,\"message\":\"hello\"}"
 	headerParams["api-expires"] = expires
 	headerParams["api-key"] = c.ApiKey
-	headerParams["api-signature"] = Signature(c.SecretKey, httpMethod, path[22:], queryParams.Encode(), expires, bodyStr)
+	paths := strings.Split(path, ".com")
+	if len(paths) > 1 {
+		headerParams["api-signature"] = Signature(c.SecretKey, httpMethod, paths[1], queryParams.Encode(), expires, bodyStr)
+	}
+
+	// headerParams["api-signature"] = Signature(c.SecretKey, httpMethod, path[22:],
+	// 	queryParams.Encode(), expires, bodyStr)
 }
 
 // func SetSimpleHeader(headerParams map[string]string, c *Configuration, httpMethod, path string,

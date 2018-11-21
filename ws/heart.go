@@ -19,10 +19,6 @@ func NewHeart() *Heart {
 	}
 }
 
-// func (c *Heart) Start() {
-// 	c.start <- true
-// }
-
 func (c *Heart) Reset() {
 	c.cnt = 0
 	// c.ticker = time.NewTicker(TFREQ)

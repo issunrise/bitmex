@@ -24,6 +24,10 @@ package rest
 
 import (
 	"encoding/base64"
+	"net/http"
+
+	"github.com/go-resty/resty"
+	"golang.org/x/net/proxy"
 )
 
 type Configuration struct {
@@ -113,4 +117,16 @@ func (c *Configuration) SetDebug(enable bool) {
 
 func (c *Configuration) GetDebug() bool {
 	return c.debug
+}
+
+func (c *Configuration) SetAgent(dialer proxy.Dialer) *Configuration {
+	if dialer != nil {
+		resty.SetTransport(&http.Transport{Dial: dialer.Dial})
+	}
+	return c
+}
+
+func (c *Configuration) SetTest() *Configuration {
+	c.BasePath = "https://testnet.bitmex.com/api/v1"
+	return c
 }
