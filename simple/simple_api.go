@@ -28,17 +28,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net"
-	"strconv"
-	// "log"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"golang.org/x/net/proxy"
-)
-
-const (
-	SimplePath = "https://www.bitmex.com/api/v1"
 )
 
 type ErrorRep struct {
@@ -51,24 +45,25 @@ type ErrorInfo struct {
 }
 
 type SimpleApi struct {
-	// ProxyUrl  *url.URL
-	NetDial func(string, string) (net.Conn, error)
+	url    string
+	client *http.Client
 }
 
-func NewSimpleApi() *SimpleApi {
-	return &SimpleApi{}
-}
-
-func (c *SimpleApi) SetAgent(dialer proxy.Dialer) *SimpleApi {
-	if dialer != nil {
-		c.NetDial = dialer.Dial
+func NewSimpleApi(dialer ...proxy.Dialer) *SimpleApi {
+	client := http.DefaultClient
+	if len(dialer) > 0 {
+		if dialer[0] != nil {
+			client.Transport = &http.Transport{Dial: dialer[0].Dial}
+		}
 	}
-	// link, _ := url.Parse(SimplePath)
-	// log.Println("SetAgent", link.Host)
-	// c.NetDial = func(net, addr string) (conn net.Conn, err error) {
-	// 	return dialer.Dial("tcp", fmt.Sprintf("%s:443", link.Host))
-	// }
+	return &SimpleApi{
+		url:    "https://www.bitmex.com/api/v1",
+		client: client,
+	}
+}
 
+func (c *SimpleApi) SetTest() *SimpleApi {
+	c.url = "https://testnet.bitmex.com/api/v1"
 	return c
 }
 
@@ -80,29 +75,16 @@ func (c *SimpleApi) FundingGet(symbol string, count float32, reverse bool) ([]Fu
 	queryParams.Add("count", fmt.Sprintf("%.0f", count))
 	queryParams.Add("reverse", strconv.FormatBool(reverse))
 
-	// set Accept header
-	client := &http.Client{}
-	// log.Println("NetDial", c.NetDial)
-	if c.NetDial != nil {
-		// log.Println("FundingGet use agent")
-		client.Transport = &http.Transport{Dial: c.NetDial}
-	}
-	// if c.ProxyUrl != nil {
-	// 	client.Transport = &http.Transport{Proxy: http.ProxyURL(c.ProxyUrl)}
-	// }
-	// client := &http.Client{}
-	reqest, _ := http.NewRequest("GET", fmt.Sprintf("%s/funding?%s", SimplePath, queryParams.Encode()), nil)
-	httpResponse, err := client.Do(reqest)
+	reqest, _ := http.NewRequest("GET", fmt.Sprintf("%s/funding?%s", c.url, queryParams.Encode()), nil)
+	httpResponse, err := c.client.Do(reqest)
 	if err != nil {
-		log.Println("get FundingGet error:", err)
-		// SendError(&DingSend{Type: "Get coincola.com ETH price", Msg: errs.Error()})
-		return nil, err
+		return nil, errors.New(fmt.Sprintf("funding request error %v", err))
 	}
 
 	defer httpResponse.Body.Close()
 	data, err := ioutil.ReadAll(httpResponse.Body)
 	if err != nil {
-		log.Println("get body error:", err)
+		log.Println("funding body error:", err)
 	}
 	if httpResponse.StatusCode != 200 {
 		// log.Println("httpResponse.Body()", string(data))
@@ -110,10 +92,10 @@ func (c *SimpleApi) FundingGet(symbol string, count float32, reverse bool) ([]Fu
 		json.Unmarshal(data, &rep)
 		return nil, errors.New(fmt.Sprintf("%s,%s", rep.err.Name, rep.err.Message))
 	}
-	rep := new([]Funding)
+	rep := []Funding{}
 	// log.Println("PositionGet Json:", string(httpResponse.Body()))
 	err = json.Unmarshal(data, &rep)
-	return *rep, err
+	return rep, err
 }
 
 func (c *SimpleApi) InsuranceGet(count float32, reverse bool) ([]Insurance, error) {
@@ -123,29 +105,16 @@ func (c *SimpleApi) InsuranceGet(count float32, reverse bool) ([]Insurance, erro
 	queryParams.Add("count", fmt.Sprintf("%.0f", count))
 	queryParams.Add("reverse", strconv.FormatBool(reverse))
 
-	// set Accept header
-	client := &http.Client{}
-	if c.NetDial != nil {
-		client.Transport = &http.Transport{Dial: c.NetDial}
-	}
-
-	// if c.ProxyUrl != nil {
-	// 	client.Transport = &http.Transport{Proxy: http.ProxyURL(c.ProxyUrl)}
-	// }
-	// client := &http.Client{Transport: c.Transport}
-	// client := &http.Client{}
-	reqest, _ := http.NewRequest("GET", fmt.Sprintf("%s/insurance?%s", SimplePath, queryParams.Encode()), nil)
-	httpResponse, err := client.Do(reqest)
+	reqest, _ := http.NewRequest("GET", fmt.Sprintf("%s/insurance?%s", c.url, queryParams.Encode()), nil)
+	httpResponse, err := c.client.Do(reqest)
 	if err != nil {
-		log.Println("get InsuranceGet error:", err)
-		// SendError(&DingSend{Type: "Get coincola.com ETH price", Msg: errs.Error()})
-		return nil, err
+		return nil, errors.New(fmt.Sprintf("insurance request error %v", err))
 	}
 
 	defer httpResponse.Body.Close()
 	data, err := ioutil.ReadAll(httpResponse.Body)
 	if err != nil {
-		log.Println("get body error:", err)
+		log.Println("insurance body error:", err)
 	}
 	if httpResponse.StatusCode != 200 {
 		// log.Println("httpResponse.Body()", string(data))
@@ -153,11 +122,42 @@ func (c *SimpleApi) InsuranceGet(count float32, reverse bool) ([]Insurance, erro
 		json.Unmarshal(data, &rep)
 		return nil, errors.New(fmt.Sprintf("%s,%s", rep.err.Name, rep.err.Message))
 	}
-	var rep []Insurance
+	rep := []Insurance{}
 	// log.Println("PositionGet Json:", string(httpResponse.Body()))
 	err = json.Unmarshal(data, &rep)
 	if len(rep) == 0 || err != nil {
 		return nil, errors.New(fmt.Sprintf("insurances data error %v. data:%s", err, string(data)))
 	}
 	return rep, nil
+}
+
+func (c *SimpleApi) TradeGet(symbol string, count float32, reverse bool) ([]Trade, error) {
+
+	queryParams := url.Values{}
+	// add default headers if any
+	queryParams.Add("symbol", symbol)
+	queryParams.Add("count", fmt.Sprintf("%.0f", count))
+	queryParams.Add("reverse", strconv.FormatBool(reverse))
+
+	reqest, _ := http.NewRequest("GET", fmt.Sprintf("%s/trade?%s", c.url, queryParams.Encode()), nil)
+	httpResponse, err := c.client.Do(reqest)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("trade request error %v", err))
+	}
+
+	defer httpResponse.Body.Close()
+	data, err := ioutil.ReadAll(httpResponse.Body)
+	if err != nil {
+		log.Println("trade body error:", err)
+	}
+	if httpResponse.StatusCode != 200 {
+		// log.Println("httpResponse.Body()", string(data))
+		rep := new(ErrorRep)
+		json.Unmarshal(data, &rep)
+		return nil, errors.New(fmt.Sprintf("%s,%s", rep.err.Name, rep.err.Message))
+	}
+	rep := []Trade{}
+	// log.Println("PositionGet Json:", string(httpResponse.Body()))
+	err = json.Unmarshal(data, &rep)
+	return rep, err
 }

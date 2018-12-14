@@ -20,20 +20,22 @@ const (
 )
 
 type WebSocketClient struct {
-	heart       *Heart
 	ws          *websocket.Conn
 	readSignal  chan *Response
 	writeSignal chan interface{}
 	doneSignal  chan bool
 	err         error
-	exitCnt     int
+	heartCnt    int
 }
 
-func NewDataSignal() chan *Response {
+func NewDataSignal(size ...uint64) chan *Response {
+	if len(size) > 0 {
+		return make(chan *Response, size[0])
+	}
 	return make(chan *Response, RBUFFER)
 }
 
-func NewWsClient(data chan *Response, dialer proxy.Dialer) (*WebSocketClient, error) {
+func NewWsClient(readSignal chan *Response, dialer proxy.Dialer) (*WebSocketClient, error) {
 	client := websocket.DefaultDialer
 	client.ReadBufferSize = 10240
 	client.ReadBufferSize = 10240
@@ -54,26 +56,32 @@ func NewWsClient(data chan *Response, dialer proxy.Dialer) (*WebSocketClient, er
 		return nil, err
 	}
 	return &WebSocketClient{
-		NewHeart(),
-		ws,
-		data,
-		make(chan interface{}, WBUFFER),
-		make(chan bool, 20),
-		nil,
-		0,
-	}, err
+		ws:          ws,
+		readSignal:  readSignal,
+		writeSignal: make(chan interface{}, WBUFFER),
+		doneSignal:  make(chan bool, 10),
+	}, nil
 }
 
 func (c *WebSocketClient) ListenWrite() {
+	heart := time.NewTicker(time.Second * 6)
 	defer func() {
-		c.exitCnt++
+		recover()
+		heart.Stop()
+		close(c.writeSignal)
 		log.Println("ListenWrite closed")
 	}()
 	for {
 		select {
 		case <-c.doneSignal:
-			c.doneSignal <- true
 			return
+		case <-heart.C:
+			c.Write("ping")
+			if c.heartCnt++; c.heartCnt > 3 {
+				c.err = errors.New(fmt.Sprintf("Webscoket connection timeout. heart cnt is %d", c.heartCnt))
+				close(c.doneSignal)
+				return
+			}
 		case data := <-c.writeSignal:
 			// log.Println("writeSignal:", data)
 			msg, _ := json.Marshal(data)
@@ -90,33 +98,30 @@ func (c *WebSocketClient) ListenWrite() {
 
 func (c *WebSocketClient) ListenRead() {
 	defer func() {
-		c.exitCnt++
+		recover()
 		log.Println("ListenRead closed")
 	}()
 	for {
 		select {
 		case <-c.doneSignal:
-			log.Println("old data close")
-			c.doneSignal <- true
 			return
 		default:
 			var rep Response
-			_, msg, err := c.ws.ReadMessage()
+			_, data, err := c.ws.ReadMessage()
 			if err != nil {
-				log.Printf("Webscoket read error:%v", err)
-				c.err = err
-				c.doneSignal <- true
+				c.err = errors.New(fmt.Sprintf("Webscoket read error: %v", err))
+				close(c.doneSignal)
 				return
 			}
-			if err := json.Unmarshal(msg, &rep); err != nil {
-				if string(msg) == "pong" {
-					c.heart.Reset()
-				} else {
-					log.Printf("Webscoket unmarshal error:%v,data:%v", err, string(msg))
-				}
+			c.heartCnt = 0
+			if string(data) == "pong" {
+				continue
+			}
+			// log.Println("bitmex websocket data:", string(data))
+			if err := json.Unmarshal(data, &rep); err != nil {
+				log.Printf("Webscoket unmarshal error:%v,data:%v", err, string(data))
 			} else {
 				c.readSignal <- &rep
-				c.heart.Reset()
 			}
 		}
 	}
@@ -150,45 +155,32 @@ func (c *WebSocketClient) ListenRead() {
 	// }
 }
 
-func (c *WebSocketClient) ListenHeart() {
-	defer func() {
-		c.exitCnt++
-		c.heart.timer.Stop()
-		log.Println("ListenHeart closed")
-	}()
-	for {
-		select {
-		case <-c.doneSignal:
-			c.doneSignal <- true
-			return
-		case <-c.heart.timer.C:
-			c.Write("ping")
-			c.heart.cnt++
-			// log.Println("Send ping times:", c.heart.cnt)
-			if c.heart.cnt > 3 {
-				c.err = errors.New(fmt.Sprintf("Webscoket connection timeout. heart cnt is %d", c.heart.cnt))
-				c.doneSignal <- true
-				return
-			}
-		}
-	}
-}
+// func (c *WebSocketClient) ListenHeart() {
+// 	defer func() {
+// 		c.exitCnt++
+// 		c.heart.timer.Stop()
+// 		log.Println("ListenHeart closed")
+// 	}()
+// 	for {
+// 		select {
+// 		case <-c.doneSignal:
+// 			return
+// 		case <-c.heart.timer.C:
+// 			c.Write("ping")
+// 			c.heart.cnt++
+// 			// log.Println("Send ping times:", c.heart.cnt)
+// 			if c.heart.cnt > 3 {
+// 				c.err = errors.New(fmt.Sprintf("Webscoket connection timeout. heart cnt is %d", c.heart.cnt))
+// 				close(c.doneSignal)
+// 				return
+// 			}
+// 		}
+// 	}
+// }
 
 func (c *WebSocketClient) Run() error {
-
 	go c.ListenWrite()
-	go c.ListenRead()
-	c.ListenHeart()
-
-	for c.exitCnt < 3 {
-		time.Sleep(time.Millisecond * 200)
-	}
-	defer func() {
-		recover()
-	}()
-	close(c.doneSignal)
-	close(c.writeSignal)
-	log.Println("bitmex websocket closed. close signal:", c.exitCnt)
+	c.ListenRead()
 	return c.err
 }
 
@@ -196,9 +188,7 @@ func (c *WebSocketClient) Close() error {
 	defer func() {
 		recover()
 	}()
-	select {
-	case c.doneSignal <- true:
-	}
+	close(c.doneSignal)
 	c.err = errors.New("close conn.")
 	return c.ws.Close()
 }

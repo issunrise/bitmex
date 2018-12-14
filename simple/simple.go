@@ -17,3 +17,16 @@ type Insurance struct {
 	Timestamp     time.Time "timestamp"
 	WalletBalance float64   "walletBalance"
 }
+
+type Trade struct {
+	Timestamp       time.Time
+	Symbol          string
+	Side            string
+	Size            float64
+	Price           float64
+	TickDirection   string
+	TrdMatchID      string
+	GrossValue      float64
+	HomeNotional    float64
+	ForeignNotional float64
+}

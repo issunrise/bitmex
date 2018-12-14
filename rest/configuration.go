@@ -119,7 +119,7 @@ func (c *Configuration) GetDebug() bool {
 	return c.debug
 }
 
-func (c *Configuration) SetAgent(dialer proxy.Dialer) *Configuration {
+func (c *Configuration) Proxy(dialer proxy.Dialer) *Configuration {
 	if dialer != nil {
 		resty.SetTransport(&http.Transport{Dial: dialer.Dial})
 	}

@@ -205,15 +205,15 @@ func (a OrderApi) OrderCancel(orderID string, clOrdID string, text string) ([]Or
 	headerParams := make(map[string]string)
 	queryParams := url.Values{}
 	formParams := make(map[string]string)
-	var postBody interface{}
+	// var postBody interface{}
 	var fileName string
 	var fileBytes []byte
 
 	// add default headers if any
 	for key := range a.Configuration.DefaultHeader {
 		headerParams[key] = a.Configuration.DefaultHeader[key]
-	}
 
+	}
 	// to determine the Content-Type header
 	localVarHttpContentTypes := []string{"application/json", "application/x-www-form-urlencoded"}
 
@@ -241,10 +241,19 @@ func (a OrderApi) OrderCancel(orderID string, clOrdID string, text string) ([]Or
 	formParams["clOrdID"] = clOrdID
 	formParams["text"] = text
 	var successPayload = new([]Order)
-	httpResponse, err := a.Configuration.APIClient.CallAPI(path, httpMethod, postBody, headerParams, queryParams, formParams, fileName, fileBytes)
+	SetApiHeader(headerParams, &a.Configuration, httpMethod, path, formParams, queryParams)
+	httpResponse, err := a.Configuration.APIClient.CallAPI(path, httpMethod, formParams, headerParams, queryParams, nil, fileName, fileBytes)
 	if err != nil {
 		return *successPayload, NewAPIResponse(httpResponse.RawResponse), err
 	}
+	if httpResponse.StatusCode() != 200 {
+		rep := new(ModelError)
+		json.Unmarshal(httpResponse.Body(), &rep)
+		// log.Println("OrderCancel error", string(httpResponse.Body()))
+		return nil, NewAPIResponse(httpResponse.RawResponse), errors.New(fmt.Sprintf("%s,%s", rep.Error_.Name, rep.Error_.Message))
+	}
+
+	// log.Println("OrderCancel", string(httpResponse.Body()))
 	err = json.Unmarshal(httpResponse.Body(), &successPayload)
 	return *successPayload, NewAPIResponse(httpResponse.RawResponse), err
 }
@@ -266,7 +275,6 @@ func (a OrderApi) OrderCancelAll(symbol string, filter string, text string) (*in
 	headerParams := make(map[string]string)
 	queryParams := url.Values{}
 	formParams := make(map[string]string)
-	var postBody interface{}
 	var fileName string
 	var fileBytes []byte
 
@@ -302,9 +310,16 @@ func (a OrderApi) OrderCancelAll(symbol string, filter string, text string) (*in
 	formParams["filter"] = filter
 	formParams["text"] = text
 	var successPayload = new(interface{})
-	httpResponse, err := a.Configuration.APIClient.CallAPI(path, httpMethod, postBody, headerParams, queryParams, formParams, fileName, fileBytes)
+	SetApiHeader(headerParams, &a.Configuration, httpMethod, path, formParams, queryParams)
+	httpResponse, err := a.Configuration.APIClient.CallAPI(path, httpMethod, formParams, headerParams, queryParams, nil, fileName, fileBytes)
 	if err != nil {
 		return successPayload, NewAPIResponse(httpResponse.RawResponse), err
+	}
+	if httpResponse.StatusCode() != 200 {
+		rep := new(ModelError)
+		json.Unmarshal(httpResponse.Body(), &rep)
+		// log.Println("OrderCancel error", string(httpResponse.Body()))
+		return nil, NewAPIResponse(httpResponse.RawResponse), errors.New(fmt.Sprintf("%s,%s", rep.Error_.Name, rep.Error_.Message))
 	}
 	err = json.Unmarshal(httpResponse.Body(), &successPayload)
 	return successPayload, NewAPIResponse(httpResponse.RawResponse), err
@@ -690,7 +705,7 @@ func (a OrderApi) OrderCreate(symbol, side, ordType string, orderQty, price floa
 		json.Unmarshal(httpResponse.Body(), &rep)
 		return nil, NewAPIResponse(httpResponse.RawResponse), errors.New(fmt.Sprintf("%s,%s", rep.Error_.Name, rep.Error_.Message))
 	}
-	log.Println("OrderCreate:", string(httpResponse.Body()))
+	// log.Println("OrderCreate:", string(httpResponse.Body()))
 	rep := new(Order)
 	err = json.Unmarshal(httpResponse.Body(), &rep)
 	return rep, NewAPIResponse(httpResponse.RawResponse), err
